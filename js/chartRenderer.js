@@ -1,22 +1,75 @@
 const ChartRenderer = {
-    renderChart(data, statistic) {
+    renderChart(data, statistics) {
         const container = document.getElementById('chart-container');
-        if (!container || !data || data.length <= 1) return;
+        console.log('ChartRenderer.renderChart called:', { 
+            hasContainer: !!container, 
+            dataLength: data ? data.length : 0, 
+            statisticsLength: statistics ? statistics.length : 0,
+            statistics: statistics
+        });
+        
+        if (!container || !data || data.length === 0 || !statistics || statistics.length === 0) {
+            console.log('Early return - missing requirements');
+            return;
+        }
         
         container.innerHTML = '';
         
-        const chartData = data
-            .map(d => ({
-                year: parseInt(d.Year),
-                value: parseFloat(d[statistic])
-            }))
-            .filter(d => !isNaN(d.year) && !isNaN(d.value));
+        // Check if there's only one year of data
+        const uniqueYears = [...new Set(data.map(d => d.Year))];
+        console.log('Unique years:', uniqueYears);
         
-        if (chartData.length === 0) return;
+        if (uniqueYears.length === 1) {
+            // Show single year data as a bar chart or message
+            container.innerHTML = `
+                <div style="padding: 20px; text-align: center; color: #666; font-size: 13px;">
+                    <p style="margin-bottom: 15px;">Only ${uniqueYears[0]} data available</p>
+                    <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;">
+                        ${statistics.map(stat => {
+                            const val = data[0][stat];
+                            const formatted = DataProcessor.formatValue(val, CONFIG.STATISTICS[stat].format);
+                            return `
+                                <div style="background: #f8f9fa; padding: 8px 12px; border-radius: 4px; border-left: 3px solid #4a90e2;">
+                                    <div style="font-size: 11px; color: #666; margin-bottom: 3px;">${stat}</div>
+                                    <div style="font-size: 14px; font-weight: 600; color: #333;">${formatted}</div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+            return;
+        }
+        
+        // Prepare data for each statistic
+        const chartDataSets = statistics.map(stat => {
+            const values = data
+                .map(d => ({
+                    year: parseInt(d.Year),
+                    value: parseFloat(d[stat])
+                }))
+                .filter(d => !isNaN(d.year) && !isNaN(d.value) && d.value !== null);
+            
+            console.log(`Stat ${stat}:`, values.length, 'valid points');
+            
+            return {
+                statistic: stat,
+                data: values
+            };
+        }).filter(ds => ds.data.length > 0);
+        
+        console.log('Chart datasets prepared:', chartDataSets.length);
+        
+        if (chartDataSets.length === 0) {
+            container.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">No valid data for selected statistics</div>';
+            return;
+        }
         
         const width = container.offsetWidth;
         const height = CONFIG.CHART_CONFIG.height;
         const margin = CONFIG.CHART_CONFIG.margin;
+        
+        console.log('Chart dimensions:', { width, height, margin });
         
         const svg = d3.select(container)
             .append('svg')
@@ -29,54 +82,107 @@ const ChartRenderer = {
         const g = svg.append('g')
             .attr('transform', `translate(${margin.left},${margin.top})`);
         
+        // Get all years across all datasets
+        const allYears = [...new Set(chartDataSets.flatMap(ds => ds.data.map(d => d.year)))];
+        
         const x = d3.scaleLinear()
-            .domain(d3.extent(chartData, d => d.year))
+            .domain(d3.extent(allYears))
             .range([0, chartWidth]);
         
+        // Normalize values for each statistic to 0-1 range for better multi-line visualization
+        const normalizedDataSets = chartDataSets.map(ds => {
+            const values = ds.data.map(d => d.value);
+            const min = d3.min(values);
+            const max = d3.max(values);
+            const range = max - min;
+            
+            return {
+                statistic: ds.statistic,
+                data: ds.data.map(d => ({
+                    year: d.year,
+                    value: d.value,
+                    normalized: range > 0 ? (d.value - min) / range : 0.5
+                })),
+                min: min,
+                max: max
+            };
+        });
+        
         const y = d3.scaleLinear()
-            .domain([0, d3.max(chartData, d => d.value) * 1.1])
+            .domain([0, 1])
             .range([chartHeight, 0]);
+        
+        // Color scale for different statistics
+        const colorScale = d3.scaleOrdinal()
+            .domain(statistics)
+            .range(['#4a90e2', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#34495e', '#16a085', '#c0392b', '#8e44ad']);
         
         const line = d3.line()
             .x(d => x(d.year))
-            .y(d => y(d.value))
+            .y(d => y(d.normalized))
             .curve(d3.curveMonotoneX);
         
-        g.append('path')
-            .datum(chartData)
-            .attr('fill', 'none')
-            .attr('stroke', '#4a90e2')
-            .attr('stroke-width', 2)
-            .attr('d', line);
+        // Draw lines for each statistic
+        normalizedDataSets.forEach(ds => {
+            g.append('path')
+                .datum(ds.data)
+                .attr('fill', 'none')
+                .attr('stroke', colorScale(ds.statistic))
+                .attr('stroke-width', 2)
+                .attr('d', line);
+            
+            // Add points
+            g.selectAll(`.point-${ds.statistic.replace(/\s/g, '-')}`)
+                .data(ds.data)
+                .enter()
+                .append('circle')
+                .attr('cx', d => x(d.year))
+                .attr('cy', d => y(d.normalized))
+                .attr('r', 3)
+                .attr('fill', colorScale(ds.statistic))
+                .append('title')
+                .text(d => `${ds.statistic}: ${DataProcessor.formatValue(d.value, CONFIG.STATISTICS[ds.statistic].format)} (${d.year})`);
+        });
         
-        g.selectAll('circle')
-            .data(chartData)
-            .enter()
-            .append('circle')
-            .attr('cx', d => x(d.year))
-            .attr('cy', d => y(d.value))
-            .attr('r', 3)
-            .attr('fill', '#4a90e2');
-        
+        // X axis
         const xAxis = d3.axisBottom(x)
-            .ticks(Math.min(5, chartData.length))
+            .ticks(Math.min(5, allYears.length))
             .tickFormat(d3.format('d'));
-        
-        const yAxis = d3.axisLeft(y)
-            .ticks(5)
-            .tickFormat(d => {
-                if (d >= 1000000) return (d / 1000000).toFixed(1) + 'M';
-                if (d >= 1000) return (d / 1000).toFixed(0) + 'K';
-                return d.toFixed(0);
-            });
         
         g.append('g')
             .attr('transform', `translate(0,${chartHeight})`)
             .call(xAxis)
             .style('font-size', '10px');
         
+        // Y axis (normalized)
         g.append('g')
-            .call(yAxis)
+            .call(d3.axisLeft(y).ticks(5).tickFormat(d => (d * 100).toFixed(0) + '%'))
             .style('font-size', '10px');
+        
+        // Legend
+        const legend = g.append('g')
+            .attr('transform', `translate(${chartWidth - 100}, 10)`);
+        
+        normalizedDataSets.forEach((ds, i) => {
+            const legendRow = legend.append('g')
+                .attr('transform', `translate(0, ${i * 18})`);
+            
+            legendRow.append('line')
+                .attr('x1', 0)
+                .attr('x2', 15)
+                .attr('y1', 5)
+                .attr('y2', 5)
+                .attr('stroke', colorScale(ds.statistic))
+                .attr('stroke-width', 2);
+            
+            legendRow.append('text')
+                .attr('x', 20)
+                .attr('y', 9)
+                .style('font-size', '9px')
+                .style('fill', '#333')
+                .text(ds.statistic.substring(0, 15) + (ds.statistic.length > 15 ? '...' : ''));
+        });
+        
+        console.log('Chart rendered successfully');
     }
 };

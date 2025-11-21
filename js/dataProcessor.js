@@ -3,14 +3,15 @@ const DataProcessor = {
         const dioceseMap = new Map();
         
         rawData.forEach(row => {
-            const dioceseId = row.ID;
-            if (!dioceseMap.has(dioceseId)) {
-                dioceseMap.set(dioceseId, []);
+            // Use Diocese field as the key instead of ID
+            const dioceseKey = row.Diocese || row.ID;
+            if (!dioceseMap.has(dioceseKey)) {
+                dioceseMap.set(dioceseKey, []);
             }
-            dioceseMap.get(dioceseId).push(row);
+            dioceseMap.get(dioceseKey).push(row);
         });
         
-        dioceseMap.forEach((records, dioceseId) => {
+        dioceseMap.forEach((records, dioceseKey) => {
             records.sort((a, b) => parseInt(a.Year) - parseInt(b.Year));
             
             const columns = ['Catholics', 'Total Population', 'Percent Catholic', 
@@ -30,6 +31,11 @@ const DataProcessor = {
                 });
             });
         });
+        
+        console.log('Processed dioceses by name:', dioceseMap.size);
+        // Log a sample to verify
+        const firstKey = Array.from(dioceseMap.keys())[0];
+        console.log('Sample diocese:', firstKey, 'Years:', dioceseMap.get(firstKey).length);
         
         return dioceseMap;
     },
@@ -53,7 +59,15 @@ const DataProcessor = {
         
         if (values.length === 0) return [0, 1];
         
-        return [Math.min(...values), Math.max(...values)];
+        const min = Math.min(...values);
+        let max = Math.max(...values);
+        
+        // Cap Percent Catholic at 100%
+        if (statistic === 'Percent Catholic' && max > 100) {
+            max = 100;
+        }
+        
+        return [min, max];
     },
     
     formatValue(value, format) {

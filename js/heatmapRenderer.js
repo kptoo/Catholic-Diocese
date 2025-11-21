@@ -1,6 +1,7 @@
 const HeatmapRenderer = {
     currentStatistic: 'Catholics',
     colorScale: null,
+    currentHistoricalData: null,
     
     setStatistic(statistic) {
         this.currentStatistic = statistic;
@@ -80,20 +81,59 @@ const HeatmapRenderer = {
                 const value = diocese[statistic];
                 const color = this.getColor(value);
                 
+                // Use Diocese field as key to get historical data
+                const dioceseKey = diocese.Diocese || diocese.ID;
+                const historicalData = dioceseMap.get(dioceseKey);
+                
                 const popupContent = this.createPopupContent(
                     diocese, 
                     statistic, 
-                    dioceseMap.get(diocese.ID)
+                    historicalData
                 );
                 
                 const marker = MapManager.addMarker(lat, lng, popupContent, color);
                 
-                marker.on('popupopen', () => {
-                    const historicalData = dioceseMap.get(diocese.ID);
-                    ChartRenderer.renderChart(historicalData, statistic);
+                marker.on('popupopen', (e) => {
+                    const popup = e.popup;
+                    const popupElement = popup.getElement();
+                    
+                    // Store diocese info for modal
+                    const dioceseInfo = {
+                        title: diocese.Diocese || 'Unknown Diocese',
+                        country: diocese.Country || 'N/A',
+                        statistic: statistic,
+                        historicalData: historicalData
+                    };
+                    
+                    // Use setTimeout to ensure DOM is fully ready
+                    setTimeout(() => {
+                        this.setupModalButton(popupElement, dioceseInfo);
+                    }, 50);
                 });
             }
         });
+    },
+    
+    setupModalButton(popupElement, dioceseInfo) {
+        console.log('setupModalButton called');
+        
+        // Use event delegation on the popup element
+        popupElement.addEventListener('click', function(e) {
+            if (e.target && e.target.id === 'open-chart-modal-btn') {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                console.log('Opening chart modal');
+                ChartModal.open(dioceseInfo);
+            }
+        }, { once: false });
+        
+        console.log('Modal button handler set up');
+    },
+    
+    getSelectedChartStatistics() {
+        const checkboxes = document.querySelectorAll('#statistic-panel input[type="checkbox"]:checked');
+        return Array.from(checkboxes).map(cb => cb.value);
     },
     
     createPopupContent(diocese, statistic, historicalData) {
@@ -104,6 +144,8 @@ const HeatmapRenderer = {
         const dioceseTitle = diocese.Diocese || 'Unknown Diocese';
         const dioceseName = diocese.Name || 'N/A';
         const country = diocese.Country || 'N/A';
+        
+        const hasHistoricalData = historicalData && historicalData.length > 1;
         
         return `
             <div class="popup-header">${dioceseTitle}</div>
@@ -127,10 +169,11 @@ const HeatmapRenderer = {
                 <span class="popup-stat-label">Type:</span>
                 <span class="popup-stat-value">${diocese.Type_of_Jurisdiction || 'N/A'}</span>
             </div>
-            ${historicalData && historicalData.length > 1 ? `
-                <div class="popup-chart">
-                    <div class="popup-chart-title">Historical Trend</div>
-                    <div id="chart-container"></div>
+            ${hasHistoricalData ? `
+                <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee;">
+                    <button id="open-chart-modal-btn" class="chart-toggle-btn">
+                        📊 View Historical Trends (${historicalData.length} years)
+                    </button>
                 </div>
             ` : ''}
         `;

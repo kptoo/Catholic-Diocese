@@ -6,6 +6,7 @@ const App = {
     async initialize() {
         try {
             MapManager.initialize('map');
+            ChartModal.initialize();
             
             // Load CSV directly
             const rawData = await DataLoader.loadCSV(CONFIG.CSV_PATH);
@@ -35,9 +36,9 @@ const App = {
     },
     
     setupEventListeners() {
-        const statisticSelect = document.getElementById('statistic-select');
+        const heatmapSelect = document.getElementById('heatmap-select');
         
-        statisticSelect.addEventListener('change', (e) => {
+        heatmapSelect.addEventListener('change', (e) => {
             this.currentStatistic = e.target.value;
             this.render();
         });

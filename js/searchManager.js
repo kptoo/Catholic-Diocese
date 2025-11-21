@@ -50,7 +50,7 @@ const SearchManager = {
         }
         
         searchResults.innerHTML = results.map(diocese => `
-            <div class="search-result-item" data-id="${diocese.ID}">
+            <div class="search-result-item" data-id="${diocese.Diocese || diocese.ID}">
                 <div class="search-result-diocese">${diocese.Diocese || 'Unknown'}</div>
                 <div class="search-result-info">${diocese.Country || 'N/A'} • ${diocese.Name || 'N/A'}</div>
             </div>
@@ -70,7 +70,7 @@ const SearchManager = {
     },
     
     focusDiocese(dioceseId) {
-        const diocese = this.data.find(d => d.ID === dioceseId);
+        const diocese = this.data.find(d => d.Diocese === dioceseId || d.ID === dioceseId);
         
         if (diocese && diocese.Latitude && diocese.Longitude) {
             const lat = parseFloat(diocese.Latitude);
